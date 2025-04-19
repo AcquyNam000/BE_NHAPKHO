@@ -1,0 +1,9 @@
+Flask
+Flask-JWT-Extended
+pandas
+numpy
+fpdf
+Werkzeug
+bcrypt
+Jinja2
+openpyxl

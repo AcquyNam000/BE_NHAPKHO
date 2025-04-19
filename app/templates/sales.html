@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báo cáo doanh thu</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Báo cáo doanh thu</h1>
+        <a href="/">Quay lại bảng điều khiển</a>
+        <div class="form-group">
+            <label for="start-date">Từ ngày:</label>
+            <input type="date" id="start-date" value="2025-01-01">
+        </div>
+        <div class="form-group">
+            <label for="end-date">Đến ngày:</label>
+            <input type="date" id="end-date" value="2025-12-31">
+        </div>
+        <button onclick="loadSales()">Xem doanh thu</button>
+        <div class="summary">
+            <p>Tổng doanh thu: <span id="total-sales">0 VNĐ</span></p>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

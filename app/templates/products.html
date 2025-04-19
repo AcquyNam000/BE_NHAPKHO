@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý sản phẩm</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Quản lý sản phẩm</h1>
+        <a href="/">Quay lại bảng điều khiển</a>
+        <form id="product-form" method="POST" action="/api/products" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="code">Mã sản phẩm:</label>
+                <input type="text" id="code" name="code" required>
+            </div>
+            <div class="form-group">
+                <label for="name">Tên sản phẩm:</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="unit">Đơn vị:</label>
+                <input type="text" id="unit" name="unit" required>
+            </div>
+            <div class="form-group">
+                <label for="purchase_price">Giá nhập:</label>
+                <input type="text" id="purchase_price_display" oninput="formatPrice(this, 'purchase_price')" placeholder="Nhập giá nhập">
+                <input type="hidden" id="purchase_price" name="purchase_price">
+            </div>
+            <div class="form-group">
+                <label for="selling_price">Giá bán:</label>
+                <input type="text" id="selling_price_display" oninput="formatPrice(this, 'selling_price')" placeholder="Nhập giá bán">
+                <input type="hidden" id="selling_price" name="selling_price">
+            </div>
+            <div class="form-group">
+                <label for="image">Hình ảnh:</label>
+                <input type="file" id="image" name="image" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label for="note">Ghi chú:</label>
+                <textarea id="note" name="note"></textarea>
+            </div>
+            <input type="hidden" id="product-id" name="product_id">
+            <button type="submit">Lưu</button>
+        </form>
+        <div class="search-bar">
+            <input type="text" id="search" placeholder="Tìm kiếm mã hoặc tên sản phẩm">
+            <button onclick="searchProducts()">Tìm</button>
+            <button onclick="exportExcel()">Xuất Excel</button>
+        </div>
+        <table id="product-table">
+            <thead>
+                <tr>
+                    <th>Mã</th>
+                    <th>Tên</th>
+                    <th>Đơn vị</th>
+                    <th>Giá nhập</th>
+                    <th>Giá bán</th>
+                    <th>Hình ảnh</th>
+                    <th>Ghi chú</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="pagination">
+            <button onclick="prevPage()">Trước</button>
+            <span id="page-info"></span>
+            <button onclick="nextPage()">Sau</button>
+        </div>
+    </div>
+    <script>
+        function formatPrice(input, hiddenFieldId) {
+            let value = input.value.replace(/\D/g, '');
+            if (!value) {
+                input.value = '';
+                document.getElementById(hiddenFieldId).value = '';
+                return;
+            }
+
+            let number = parseInt(value);
+            let formatted = number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            input.value = formatted;
+            document.getElementById(hiddenFieldId).value = number;
+        }
+
+        async function exportExcel() {
+            try {
+                const response = await fetch('/api/products/export/excel');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'san_pham.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    const data = await response.json();
+                    alert(data.message);
+                }
+            } catch (error) {
+                alert('Lỗi khi xuất Excel: ' + error);
+            }
+        }
+
+        document.getElementById('product-form').addEventListener('submit', (event) => {
+            const purchasePrice = document.getElementById('purchase_price').value;
+            const selling_price = document.getElementById('selling_price').value;
+
+            if (!purchasePrice || !selling_price) {
+                event.preventDefault();
+                alert('Vui lòng nhập đầy đủ Giá nhập và Giá bán.');
+            }
+        });
+    </script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'932ca4c3ec208bbc',t:'MTc0NTA2ODI0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+</body>
+</html>
