@@ -1,13 +1,22 @@
 from flask import Blueprint, request, jsonify, send_file, render_template
 from .database import get_db_connection
-from werkzeug.utils import secure_filename
-import os
-import pandas as pd
-from config import Config
 import sqlite3
-import tempfile
+import os
+import json
+from werkzeug.utils import secure_filename
+import pandas as pd
+from datetime import datetime
 
 products_bp = Blueprint('products', __name__)
+
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def ensure_products_table():
     conn = get_db_connection()
@@ -16,26 +25,35 @@ def ensure_products_table():
     if not c.fetchone():
         c.execute('''CREATE TABLE products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT UNIQUE NOT NULL,
+            code TEXT NOT NULL,
             name TEXT NOT NULL,
             unit TEXT NOT NULL,
             purchase_price REAL NOT NULL,
             selling_price REAL NOT NULL,
-            quantity INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 0,
             image TEXT,
             note TEXT
         )''')
-        c.execute("INSERT INTO products (code, name, unit, purchase_price, selling_price, quantity, image, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  ('sp03', 'Cà phê gói', 'gói', 100000, 200000, 33, '', ''))
+        initial_data = [
+            ('sp01', 'Sản phẩm 1', 'Cái', 10000, 15000, 10, '', ''),
+            ('sp02', 'Sản phẩm 2', 'Cái', 20000, 30000, 20, '', ''),
+            ('sp03', 'Sản phẩm 3', 'Cái', 30000, 45000, 33, '', ''),
+            ('sp04', 'Sản phẩm 4', 'Cái', 40000, 60000, 40, '', ''),
+            ('sp05', 'Sản phẩm 5', 'Cái', 50000, 75000, 50, '', '')
+        ]
+        c.executemany('INSERT INTO products (code, name, unit, purchase_price, selling_price, quantity, image, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', initial_data)
         conn.commit()
     conn.close()
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
-
 @products_bp.route('/products', methods=['GET'])
 def products_page():
-    return render_template('products.html')
+    ensure_products_table()
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM products")
+    products = c.fetchall()
+    conn.close()
+    return render_template('products.html', products=products)
 
 @products_bp.route('/api/products', methods=['GET'])
 def get_products():
@@ -47,96 +65,103 @@ def get_products():
 
     conn = get_db_connection()
     c = conn.cursor()
-    try:
-        query = "SELECT id, code, name, unit, purchase_price, selling_price, quantity, image, note FROM products WHERE code LIKE ? OR name LIKE ?"
-        c.execute(query, (f'%{search}%', f'%{search}%'))
-        products = c.fetchall()
-        total = len(products)
-        c.execute(query + " LIMIT ? OFFSET ?", (f'%{search}%', f'%{search}%', per_page, offset))
-        products = c.fetchall()
-        print(f"Products fetched: {len(products)}")
-        return jsonify({
-            'products': [{'id': p['id'], 'code': p['code'], 'name': p['name'], 'unit': p['unit'],
-                          'purchase_price': p['purchase_price'], 'selling_price': p['selling_price'],
-                          'quantity': p['quantity'], 'image': p['image'], 'note': p['note']} for p in products],
-            'total': total,
-            'page': page,
-            'per_page': per_page
-        }), 200
-    except sqlite3.OperationalError as e:
-        print(f"Database error: {str(e)}")
-        return jsonify({'message': f'Lỗi cơ sở dữ liệu: {str(e)}'}), 500
-    finally:
-        conn.close()
+    query = "SELECT * FROM products WHERE code LIKE ? OR name LIKE ? LIMIT ? OFFSET ?"
+    c.execute(query, (f'%{search}%', f'%{search}%', per_page, offset))
+    products = c.fetchall()
+    c.execute("SELECT COUNT(*) FROM products WHERE code LIKE ? OR name LIKE ?", (f'%{search}%', f'%{search}%'))
+    total = c.fetchone()[0]
+    conn.close()
+
+    products_list = []
+    for product in products:
+        products_list.append({
+            'id': product['id'],
+            'code': product['code'],
+            'name': product['name'],
+            'unit': product['unit'],
+            'purchase_price': float(product['purchase_price']),
+            'selling_price': float(product['selling_price']),
+            'quantity': int(product['quantity']),
+            'image': product['image'],
+            'note': product['note']
+        })
+
+    return jsonify({
+        'products': products_list,
+        'page': page,
+        'per_page': per_page,
+        'total': total
+    })
+
+@products_bp.route('/api/products/search', methods=['GET'])
+def search_products_suggestions():
+    ensure_products_table()
+    search = request.args.get('q', '')
+    conn = get_db_connection()
+    c = conn.cursor()
+    if search:
+        # Sắp xếp theo mức độ khớp: sản phẩm bắt đầu bằng từ khóa lên đầu
+        query = """
+        SELECT id, name, purchase_price, selling_price 
+        FROM products 
+        WHERE name LIKE ? 
+        ORDER BY 
+            CASE 
+                WHEN name LIKE ? THEN 0 
+                WHEN name LIKE ? THEN 1 
+                ELSE 2 
+            END, name ASC
+        """
+        c.execute(query, (f'%{search}%', f'{search}%', f'%{search}%'))
+    else:
+        query = "SELECT id, name, purchase_price, selling_price FROM products ORDER BY name ASC"
+        c.execute(query)
+    products = c.fetchall()
+    conn.close()
+
+    suggestions = []
+    for product in products:
+        suggestions.append({
+            'id': product['id'],
+            'name': product['name'],
+            'purchase_price': float(product['purchase_price']),
+            'selling_price': float(product['selling_price'])
+        })
+
+    return jsonify(suggestions)
 
 @products_bp.route('/api/products', methods=['POST'])
-def add_product():
-    ensure_products_table()
-    code = request.form.get('code')
-    name = request.form.get('name')
-    unit = request.form.get('unit')
-    purchase_price = request.form.get('purchase_price')
-    selling_price = request.form.get('selling_price')
-    note = request.form.get('note', '')
-    image = request.files.get('image')
-    image_path = ''
-    quantity = 0  # Mặc định số lượng là 0 khi tạo sản phẩm mới
-
-    if not all([code, name, unit, purchase_price, selling_price]):
-        missing = [k for k, v in {"code": code, "name": name, "unit": unit, "purchase_price": purchase_price, "selling_price": selling_price}.items() if not v]
-        return jsonify({'message': f'Thiếu các trường bắt buộc: {", ".join(missing)}'}), 400
-
-    try:
-        purchase_price = float(purchase_price)
-        selling_price = float(selling_price)
-    except ValueError:
-        return jsonify({'message': 'Định dạng giá không hợp lệ'}), 400
-
-    if image and allowed_file(image.filename):
-        filename = secure_filename(image.filename)
-        image_path = os.path.join(Config.UPLOAD_FOLDER, filename)
-        try:
-            image.save(image_path)
-        except Exception as e:
-            return jsonify({'message': f'Lỗi khi lưu hình ảnh: {str(e)}'}), 500
-
-    conn = get_db_connection()
-    c = conn.cursor()
-    try:
-        c.execute("INSERT INTO products (code, name, unit, purchase_price, selling_price, quantity, image, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                  (code, name, unit, purchase_price, selling_price, quantity, image_path, note))
-        conn.commit()
-        return jsonify({'message': 'Thêm sản phẩm thành công'}), 201
-    except sqlite3.IntegrityError:
-        return jsonify({'message': 'Mã sản phẩm đã tồn tại'}), 400
-    except sqlite3.OperationalError as e:
-        return jsonify({'message': f'Lỗi cơ sở dữ liệu: {str(e)}'}), 500
-    finally:
-        conn.close()
-
-@products_bp.route('/api/products/<int:id>', methods=['PUT'])
-def update_product(id):
+def create_product():
     ensure_products_table()
     data = request.form
-    image = request.files.get('image')
-    image_path = data.get('image', '')
+    code = data.get('code')
+    name = data.get('name')
+    unit = data.get('unit')
+    purchase_price = float(data.get('purchase_price', 0))
+    selling_price = float(data.get('selling_price', 0))
+    note = data.get('note')
 
-    if image and allowed_file(image.filename):
-        filename = secure_filename(image.filename)
-        image_path = os.path.join(Config.UPLOAD_FOLDER, filename)
-        image.save(image_path)
+    if not all([code, name, unit, purchase_price, selling_price]):
+        return jsonify({'message': 'Thiếu thông tin bắt buộc'}), 400
+
+    image_path = ''
+    if 'image' in request.files:
+        file = request.files['image']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            image_path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(image_path)
 
     conn = get_db_connection()
     c = conn.cursor()
     try:
-        c.execute("""UPDATE products SET code = ?, name = ?, unit = ?, purchase_price = ?, selling_price = ?, quantity = ?, image = ?, note = ?
-                     WHERE id = ?""",
-                  (data.get('code'), data.get('name'), data.get('unit'), float(data.get('purchase_price', 0)),
-                   float(data.get('selling_price', 0)), int(data.get('quantity', 0)), image_path, data.get('note', ''), id))
+        c.execute('''INSERT INTO products (code, name, unit, purchase_price, selling_price, quantity, image, note)
+                     VALUES (?, ?, ?, ?, ?, 0, ?, ?)''',
+                  (code, name, unit, purchase_price, selling_price, image_path, note))
         conn.commit()
-        return jsonify({'message': 'Cập nhật sản phẩm thành công'}), 200
-    except sqlite3.IntegrityError:
-        return jsonify({'message': 'Mã sản phẩm đã tồn tại'}), 400
+        return jsonify({'message': 'Sản phẩm đã được tạo'}), 201
+    except Exception as e:
+        return jsonify({'message': str(e)}), 500
     finally:
         conn.close()
 
@@ -145,45 +170,46 @@ def delete_product(id):
     ensure_products_table()
     conn = get_db_connection()
     c = conn.cursor()
+    c.execute("SELECT image FROM products WHERE id = ?", (id,))
+    product = c.fetchone()
+    if not product:
+        conn.close()
+        return jsonify({'message': 'Sản phẩm không tồn tại'}), 404
+
+    if product['image']:
+        try:
+            os.remove(product['image'])
+        except:
+            pass
+
     c.execute("DELETE FROM products WHERE id = ?", (id,))
     conn.commit()
     conn.close()
-    return jsonify({'message': 'Xóa sản phẩm thành công'}), 200
+    return jsonify({'message': 'Sản phẩm đã được xóa'})
 
 @products_bp.route('/api/products/export/excel', methods=['GET'])
 def export_excel():
     ensure_products_table()
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM products")
-        products = c.fetchall()
-        conn.close()
-
-        df = pd.DataFrame(products, columns=['ID', 'Mã', 'Tên', 'Đơn vị', 'Giá nhập', 'Giá bán', 'Số lượng', 'Hình ảnh', 'Ghi chú']) if products else pd.DataFrame(columns=['ID', 'Mã', 'Tên', 'Đơn vị', 'Giá nhập', 'Giá bán', 'Số lượng', 'Hình ảnh', 'Ghi chú'])
-        
-        # Sử dụng thư mục tạm để tránh lỗi quyền ghi
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-            excel_file = tmp.name
-            df.to_excel(excel_file, index=False, engine='openpyxl')
-        
-        return send_file(excel_file, as_attachment=True, download_name='san_pham.xlsx')
-    except Exception as e:
-        return jsonify({'message': 'Lỗi khi xuất Excel: ' + str(e)}), 500
-
-@products_bp.route('/api/products/suggest', methods=['GET'])
-def suggest_products():
-    ensure_products_table()
-    query = request.args.get('query', '')
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT id, code, name, unit, purchase_price, selling_price, quantity FROM products WHERE code LIKE ? OR name LIKE ? LIMIT 5",
-              (f'%{query}%', f'%{query}%'))
+    c.execute("SELECT code, name, unit, purchase_price, selling_price, quantity, note FROM products")
     products = c.fetchall()
     conn.close()
 
-    return jsonify({
-        'suggestions': [{'id': p['id'], 'code': p['code'], 'name': p['name'], 'unit': p['unit'],
-                         'purchase_price': p['purchase_price'], 'selling_price': p['selling_price'],
-                         'quantity': p['quantity']} for p in products]
-    }), 200
+    data = []
+    for product in products:
+        data.append({
+            'Mã': product['code'],
+            'Tên': product['name'],
+            'Đơn vị': product['unit'],
+            'Giá nhập': product['purchase_price'],
+            'Giá bán': product['selling_price'],
+            'Số lượng': product['quantity'],
+            'Ghi chú': product['note']
+        })
+
+    df = pd.DataFrame(data)
+    excel_file = 'san_pham.xlsx'
+    df.to_excel(excel_file, index=False)
+
+    return send_file(excel_file, as_attachment=True, download_name='san_pham.xlsx')

@@ -7,3 +7,4 @@ Werkzeug
 bcrypt
 Jinja2
 openpyxl
+reportlab

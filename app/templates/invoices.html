@@ -6,27 +6,14 @@
     <title>Quản lý hóa đơn</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-        .items-container {
-            margin-top: 10px;
-        }
-        .item-row {
-            display: flex;
-            align-items: center;
-            margin-bottom: 5px;
-        }
-        .item-row input {
-            margin-right: 10px;
-        }
-        .item-row button {
-            margin-left: 10px;
-        }
         .suggestions {
             position: absolute;
-            background: white;
             border: 1px solid #ccc;
+            background: white;
             max-height: 150px;
             overflow-y: auto;
             z-index: 1000;
+            width: 200px;
         }
         .suggestion-item {
             padding: 5px;
@@ -34,6 +21,33 @@
         }
         .suggestion-item:hover {
             background-color: #f0f0f0;
+        }
+        .product-item {
+            position: relative;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .price-info {
+            font-size: 0.9em;
+            color: #555;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .price-input {
+            width: 100px;
+            padding: 2px;
+        }
+        .discount-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .totals {
+            margin: 10px 0;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -44,47 +58,68 @@
         <form id="invoice-form" method="POST" action="/api/invoices">
             <div class="form-group">
                 <label for="date">Ngày:</label>
-                <input type="date" id="date" name="date" required>
+                <input type="date" id="date" name="date" readonly>
             </div>
             <div class="form-group">
                 <label for="type">Loại hóa đơn:</label>
-                <select id="type" name="type" required onchange="togglePurposeField()">
+                <select id="type" name="type" required onchange="togglePurposeField(); updateTotal();">
                     <option value="Nhập">Nhập</option>
                     <option value="Xuất">Xuất</option>
                 </select>
             </div>
             <div class="form-group" id="purpose-group">
                 <label for="purpose">Mục đích:</label>
-                <select id="purpose" name="purpose">
-                    <option value="Xuất dùng">Xuất dùng</option>
-                    <option value="Bán">Bán</option>
-                </select>
+                <input type="text" id="purpose" name="purpose">
             </div>
             <div class="form-group">
                 <label>Sản phẩm:</label>
-                <div id="items-container" class="items-container"></div>
-                <button type="button" onclick="addItem()">Thêm sản phẩm</button>
+                <div id="product-list">
+                    <div class="product-item">
+                        <input type="text" class="product-input" placeholder="Tìm kiếm sản phẩm" oninput="showSuggestions(this)" onfocus="showSuggestions(this)">
+                        <div class="suggestions" style="display: none;"></div>
+                        <input type="hidden" class="product-id">
+                        <input type="number" class="quantity-input" min="1" value="1" oninput="updateTotal()">
+                        <span class="price-info">
+                            <span class="purchase-price-label"></span>
+                            <span class="selling-price-label">Giá bán:</span>
+                            <input type="number" class="selling-price-input price-input" min="0" oninput="updateTotal()">
+                        </span>
+                        <button type="button" onclick="removeProduct(this)">Xóa</button>
+                    </div>
+                </div>
+                <button type="button" onclick="addProduct()">Thêm sản phẩm</button>
+                <input type="hidden" id="items" name="items">
             </div>
             <div class="form-group">
                 <label for="total">Tổng tiền:</label>
-                <input type="text" id="total-display" readonly>
+                <input type="text" id="total_display" readonly>
                 <input type="hidden" id="total" name="total">
             </div>
             <div class="form-group">
                 <label for="discount">Giảm giá:</label>
-                <input type="text" id="discount-display" oninput="formatDiscount(this, 'discount')" value="0">
-                <input type="hidden" id="discount" name="discount" value="0">
+                <div class="discount-group">
+                    <input type="number" id="discount" name="discount" value="0" min="0" oninput="updateTotal()">
+                    <select id="discount_type" name="discount_type" onchange="updateTotal()">
+                        <option value="fixed">VNĐ</option>
+                        <option value="percentage">%</option>
+                    </select>
+                </div>
             </div>
             <div class="form-group">
                 <label for="note">Ghi chú:</label>
                 <textarea id="note" name="note"></textarea>
             </div>
-            <input type="hidden" id="items" name="items">
             <button type="submit">Lưu</button>
         </form>
         <div class="search-bar">
-            <input type="text" id="search" placeholder="Tìm kiếm theo mục đích">
+            <input type="text" id="search" placeholder="Tìm kiếm theo mục đích hoặc sản phẩm">
+            <input type="date" id="start_date">
+            <input type="date" id="end_date">
             <button onclick="searchInvoices()">Tìm</button>
+        </div>
+        <div class="totals">
+            <span id="total-import">Tổng tiền nhập: 0 VNĐ</span> | 
+            <span id="total-export">Tổng tiền xuất: 0 VNĐ</span>
         </div>
         <table id="invoice-table">
             <thead>
@@ -97,6 +132,7 @@
                     <th>Giảm giá</th>
                     <th>Sản phẩm</th>
                     <th>Ghi chú</th>
+                    <th>Thao tác</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -108,139 +144,177 @@
         </div>
     </div>
     <script>
-        let items = [];
+        let currentInvoicePage = 1;
 
-        function formatCurrency(number) {
-            if (typeof number !== 'number' || isNaN(number)) {
-                return '0';
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date').value = today;
+
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(endDate.getDate() - 30);
+            document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+            document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+
+            togglePurposeField();
+            searchInvoices();
+        });
+
+        function togglePurposeField() {
+            const type = document.getElementById('type').value;
+            const purposeGroup = document.getElementById('purpose-group');
+            if (type === 'Nhập') {
+                purposeGroup.style.display = 'none';
+                document.getElementById('purpose').required = false;
+            } else {
+                purposeGroup.style.display = 'block';
+                document.getElementById('purpose').required = true;
             }
-            return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         }
 
-        function formatDiscount(input, hiddenFieldId) {
-            let value = input.value.replace(/\D/g, '');
-            if (!value) {
-                input.value = '0';
-                document.getElementById(hiddenFieldId).value = '0';
+        async function showSuggestions(input) {
+            const query = input.value;
+            const suggestionsDiv = input.nextElementSibling;
+            if (!query && input !== document.activeElement) {
+                suggestionsDiv.style.display = 'none';
                 return;
             }
 
-            let number = parseInt(value);
-            let formatted = formatCurrency(number);
-            input.value = formatted;
-            document.getElementById(hiddenFieldId).value = number;
+            const response = await fetch(`/api/products/search?q=${encodeURIComponent(query)}`);
+            const suggestions = await response.json();
+
+            suggestionsDiv.innerHTML = '';
+            suggestions.forEach(suggestion => {
+                const div = document.createElement('div');
+                div.className = 'suggestion-item';
+                div.textContent = suggestion.name;
+                div.dataset.id = suggestion.id;
+                div.dataset.purchasePrice = suggestion.purchase_price;
+                div.dataset.sellingPrice = suggestion.selling_price;
+                div.onclick = () => selectSuggestion(input, div, suggestion);
+                suggestionsDiv.appendChild(div);
+            });
+
+            suggestionsDiv.style.display = suggestions.length > 0 ? 'block' : 'none';
         }
 
-        function addItem() {
-            const container = document.getElementById('items-container');
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'item-row';
-            itemDiv.innerHTML = `
-                <input type="text" class="product-input" placeholder="Tìm sản phẩm..." oninput="suggestProducts(this)">
+        function selectSuggestion(input, div, suggestion) {
+            input.value = suggestion.name;
+            const productItem = input.closest('.product-item');
+            productItem.querySelector('.product-id').value = suggestion.id;
+            const priceInfo = productItem.querySelector('.price-info');
+            const purchasePriceLabel = priceInfo.querySelector('.purchase-price-label');
+            const sellingPriceInput = priceInfo.querySelector('.selling-price-input');
+            purchasePriceLabel.textContent = `Giá nhập: ${formatCurrency(suggestion.purchase_price)} | `;
+            sellingPriceInput.value = suggestion.selling_price;
+            const suggestionsDiv = div.parentElement;
+            suggestionsDiv.style.display = 'none';
+            updateTotal();
+        }
+
+        function addProduct() {
+            const productList = document.getElementById('product-list');
+            const productItem = document.createElement('div');
+            productItem.className = 'product-item';
+            productItem.innerHTML = `
+                <input type="text" class="product-input" placeholder="Tìm kiếm sản phẩm" oninput="showSuggestions(this)" onfocus="showSuggestions(this)">
                 <div class="suggestions" style="display: none;"></div>
-                <input type="number" class="quantity-input" placeholder="Số lượng" oninput="updateTotal()">
-                <button type="button" onclick="removeItem(this)">Xóa</button>
+                <input type="hidden" class="product-id">
+                <input type="number" class="quantity-input" min="1" value="1" oninput="updateTotal()">
+                <span class="price-info">
+                    <span class="purchase-price-label"></span>
+                    <span class="selling-price-label">Giá bán:</span>
+                    <input type="number" class="selling-price-input price-input" min="0" oninput="updateTotal()">
+                </span>
+                <button type="button" onclick="removeProduct(this)">Xóa</button>
             `;
-            container.appendChild(itemDiv);
+            productList.appendChild(productItem);
+            updateTotal();
         }
 
-        function removeItem(button) {
+        function removeProduct(button) {
             button.parentElement.remove();
             updateTotal();
         }
 
-        async function suggestProducts(input) {
-            const query = input.value;
-            const suggestionsDiv = input.nextElementSibling;
-            if (query.length < 2) {
-                suggestionsDiv.style.display = 'none';
-                return;
-            }
-
-            const response = await fetch(`/api/products/suggest?query=${encodeURIComponent(query)}`);
-            const data = await response.json();
-            suggestionsDiv.innerHTML = '';
-            if (data.suggestions && data.suggestions.length > 0) {
-                suggestionsDiv.style.display = 'block';
-                data.suggestions.forEach(product => {
-                    const suggestionItem = document.createElement('div');
-                    suggestionItem.className = 'suggestion-item';
-                    suggestionItem.textContent = `${product.code} - ${product.name}`;
-                    suggestionItem.onclick = () => {
-                        input.value = product.name; // Giữ lại tên sản phẩm
-                        input.dataset.productId = product.id;
-                        input.dataset.productName = product.name; // Lưu tên vào dataset
-                        input.dataset.sellingPrice = product.selling_price;
-                        suggestionsDiv.style.display = 'none';
-                        updateTotal();
-                    };
-                    suggestionsDiv.appendChild(suggestionItem);
-                });
-            } else {
-                suggestionsDiv.style.display = 'none';
-            }
-        }
-
         function updateTotal() {
-            items = [];
             let total = 0;
-            document.querySelectorAll('.item-row').forEach(row => {
-                const productInput = row.querySelector('.product-input');
-                const quantityInput = row.querySelector('.quantity-input');
-                if (productInput.dataset.productId && quantityInput.value) {
-                    const quantity = parseInt(quantityInput.value);
-                    const sellingPrice = parseFloat(productInput.dataset.sellingPrice) || 0;
-                    items.push({ 
-                        id: parseInt(productInput.dataset.productId), 
-                        quantity,
-                        name: productInput.dataset.productName // Lưu tên sản phẩm vào items
-                    });
-                    total += quantity * sellingPrice;
-                    // Đảm bảo ô nhập liệu hiển thị tên sản phẩm
-                    if (productInput.dataset.productName) {
-                        productInput.value = productInput.dataset.productName;
-                    }
-                }
-            });
-            document.getElementById('total').value = total;
-            document.getElementById('total-display').value = formatCurrency(total);
-            document.getElementById('items').value = JSON.stringify(items);
-        }
-
-        function togglePurposeField() {
-            const typeSelect = document.getElementById('type');
-            const purposeGroup = document.getElementById('purpose-group');
-            if (typeSelect.value === 'Nhập') {
-                purposeGroup.style.display = 'none';
+            const type = document.getElementById('type').value;
+            if (type === 'Xuất' && document.getElementById('total').dataset.purpose === 'use') {
+                total = 0;
             } else {
-                purposeGroup.style.display = 'block';
+                const productItems = document.querySelectorAll('.product-item');
+                productItems.forEach(item => {
+                    const input = item.querySelector('.product-input');
+                    const suggestionDiv = item.querySelector('.suggestions');
+                    const selectedSuggestion = suggestionDiv.querySelector(`[data-id="${item.querySelector('.product-id').value}"]`);
+                    const purchasePrice = selectedSuggestion ? parseFloat(selectedSuggestion.dataset.purchasePrice || 0) : 0;
+                    const sellingPriceInput = item.querySelector('.selling-price-input');
+                    const sellingPrice = sellingPriceInput && sellingPriceInput.value ? parseFloat(sellingPriceInput.value) : (selectedSuggestion ? parseFloat(selectedSuggestion.dataset.sellingPrice || 0) : 0);
+                    const quantity = parseInt(item.querySelector('.quantity-input').value || 0);
+                    const price = type === 'Nhập' ? purchasePrice : sellingPrice;
+                    total += price * quantity;
+                });
+
+                const discount = parseFloat(document.getElementById('discount').value || 0);
+                const discountType = document.getElementById('discount_type').value;
+                let finalDiscount = 0;
+                if (discountType === 'percentage') {
+                    finalDiscount = (total * discount) / 100;
+                } else {
+                    finalDiscount = discount;
+                }
+                total -= finalDiscount;
             }
+
+            document.getElementById('total_display').value = formatCurrency(total);
+            document.getElementById('total').value = total;
         }
 
-        // Tự động điền ngày hiện tại
-        document.addEventListener('DOMContentLoaded', () => {
-            const dateInput = document.getElementById('date');
-            const today = new Date().toISOString().split('T')[0];
-            dateInput.value = today;
-
-            // Ẩn trường Mục đích nếu loại hóa đơn là Nhập
-            togglePurposeField();
-        });
+        function formatCurrency(number) {
+            if (typeof number !== 'number' || isNaN(number)) {
+                return '0 VNĐ';
+            }
+            return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' VNĐ';
+        }
 
         document.getElementById('invoice-form').addEventListener('submit', async (event) => {
             event.preventDefault();
+            const type = document.getElementById('type').value;
 
-            // Kiểm tra ít nhất một sản phẩm
+            let purposeType = '';
+            if (type === 'Xuất') {
+                purposeType = confirm('Xuất để dùng? (Nhấn OK để xuất để dùng, Cancel để xuất để bán)') ? 'use' : 'sell';
+                document.getElementById('total').dataset.purpose = purposeType;
+                updateTotal();
+            }
+
+            const productItems = document.querySelectorAll('.product-item');
+            const items = [];
+            productItems.forEach(item => {
+                const productId = item.querySelector('.product-id').value;
+                const quantity = parseInt(item.querySelector('.quantity-input').value || 0);
+                const productName = item.querySelector('.product-input').value;
+                const sellingPriceInput = item.querySelector('.selling-price-input');
+                const customSellingPrice = sellingPriceInput && sellingPriceInput.value ? parseFloat(sellingPriceInput.value) : null;
+                if (productId && quantity > 0) {
+                    items.push({
+                        id: productId,
+                        name: productName,
+                        quantity: quantity,
+                        custom_selling_price: customSellingPrice
+                    });
+                }
+            });
+
             if (items.length === 0) {
-                alert('Vui lòng chọn ít nhất một sản phẩm.');
+                alert('Vui lòng thêm ít nhất một sản phẩm');
                 return;
             }
 
-            const formData = new FormData(event.target);
-            const type = formData.get('type');
-            if (type === 'Nhập') {
-                formData.set('purpose', 'Nhập kho');
-            }
+            document.getElementById('items').value = JSON.stringify(items);
+
+            const formData = new FormData(document.getElementById('invoice-form'));
             try {
                 const response = await fetch('/api/invoices', {
                     method: 'POST',
@@ -252,12 +326,22 @@
                 const data = await response.json();
                 if (response.ok) {
                     alert(data.message);
-                    event.target.reset();
-                    document.getElementById('items-container').innerHTML = '';
-                    document.getElementById('total-display').value = '';
-                    document.getElementById('discount-display').value = '0';
-                    document.getElementById('discount').value = '0';
-                    items = [];
+                    document.getElementById('invoice-form').reset();
+                    document.getElementById('date').value = new Date().toISOString().split('T')[0];
+                    document.getElementById('product-list').innerHTML = `
+                        <div class="product-item">
+                            <input type="text" class="product-input" placeholder="Tìm kiếm sản phẩm" oninput="showSuggestions(this)" onfocus="showSuggestions(this)">
+                            <div class="suggestions" style="display: none;"></div>
+                            <input type="hidden" class="product-id">
+                            <input type="number" class="quantity-input" min="1" value="1" oninput="updateTotal()">
+                            <span class="price-info">
+                                <span class="purchase-price-label"></span>
+                                <span class="selling-price-label">Giá bán:</span>
+                                <input type="number" class="selling-price-input price-input" min="0" oninput="updateTotal()">
+                            </span>
+                            <button type="button" onclick="removeProduct(this)">Xóa</button>
+                        </div>
+                    `;
                     togglePurposeField();
                     searchInvoices();
                 } else {
@@ -268,7 +352,155 @@
                 alert('Lỗi khi thêm hóa đơn. Vui lòng thử lại.');
             }
         });
+
+        async function searchInvoices() {
+            const search = document.getElementById('search').value;
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            const response = await fetch(`/api/invoices?page=${currentInvoicePage}&per_page=10&search=${encodeURIComponent(search)}&start_date=${startDate}&end_date=${endDate}`);
+            const data = await response.json();
+
+            const tableBody = document.querySelector('#invoice-table tbody');
+            tableBody.innerHTML = '';
+
+            data.invoices.forEach(invoice => {
+                const items = invoice.items;
+                const itemNames = items.map(item => `${item.name} (${item.quantity})`).join(', ');
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${invoice.id}</td>
+                    <td>${invoice.date}</td>
+                    <td>${invoice.type}</td>
+                    <td>${invoice.purpose}</td>
+                    <td>${formatCurrency(invoice.total)}</td>
+                    <td>${invoice.discount} ${invoice.discount_type === 'percentage' ? '%' : 'VNĐ'}</td>
+                    <td>${itemNames}</td>
+                    <td>${invoice.note}</td>
+                    <td>
+                        <button onclick="editInvoice(${invoice.id})">Sửa</button>
+                        <button onclick="deleteInvoice(${invoice.id})">Xóa</button>
+                        <button onclick="exportInvoicePDF(${invoice.id})">Xuất PDF</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            document.getElementById('invoice-page-info').textContent = `Trang ${data.page}/${Math.ceil(data.total / data.per_page)}`;
+            document.getElementById('total-import').textContent = `Tổng tiền nhập: ${formatCurrency(data.total_import)}`;
+            document.getElementById('total-export').textContent = `Tổng tiền xuất: ${formatCurrency(data.total_export)}`;
+        }
+
+        async function exportInvoicePDF(id) {
+            window.location.href = `/api/invoices/${id}/export/pdf`;
+        }
+
+        async function editInvoice(id) {
+            const response = await fetch(`/api/invoices?page=1&per_page=1&search=&start_date=&end_date=`);
+            const data = await response.json();
+            const invoice = data.invoices.find(inv => inv.id === id);
+            if (!invoice) {
+                alert('Hóa đơn không tồn tại');
+                return;
+            }
+
+            document.getElementById('date').value = invoice.date;
+            document.getElementById('type').value = invoice.type;
+            document.getElementById('purpose').value = invoice.purpose;
+            document.getElementById('discount').value = invoice.discount;
+            document.getElementById('discount_type').value = invoice.discount_type;
+            document.getElementById('note').value = invoice.note;
+
+            const productList = document.getElementById('product-list');
+            productList.innerHTML = '';
+            invoice.items.forEach(item => {
+                const productItem = document.createElement('div');
+                productItem.className = 'product-item';
+                productItem.innerHTML = `
+                    <input type="text" class="product-input" value="${item.name}" placeholder="Tìm kiếm sản phẩm" oninput="showSuggestions(this)" onfocus="showSuggestions(this)">
+                    <div class="suggestions" style="display: none;"></div>
+                    <input type="hidden" class="product-id" value="${item.id}">
+                    <input type="number" class="quantity-input" min="1" value="${item.quantity}" oninput="updateTotal()">
+                    <span class="price-info">
+                        <span class="purchase-price-label"></span>
+                        <span class="selling-price-label">Giá bán:</span>
+                        <input type="number" class="selling-price-input price-input" min="0" value="${item.custom_selling_price || ''}" oninput="updateTotal()">
+                    </span>
+                    <button type="button" onclick="removeProduct(this)">Xóa</button>
+                `;
+                productList.appendChild(productItem);
+            });
+
+            togglePurposeField();
+            updateTotal();
+
+            document.getElementById('invoice-form').onsubmit = async (event) => {
+                event.preventDefault();
+                const formData = new FormData(document.getElementById('invoice-form'));
+                try {
+                    const response = await fetch(`/api/invoices/${id}`, {
+                        method: 'PUT',
+                        body: formData,
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert(data.message);
+                        document.getElementById('invoice-form').reset();
+                        document.getElementById('invoice-form').onsubmit = null;
+                        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+                        document.getElementById('product-list').innerHTML = `
+                            <div class="product-item">
+                                <input type="text" class="product-input" placeholder="Tìm kiếm sản phẩm" oninput="showSuggestions(this)" onfocus="showSuggestions(this)">
+                                <div class="suggestions" style="display: none;"></div>
+                                <input type="hidden" class="product-id">
+                                <input type="number" class="quantity-input" min="1" value="1" oninput="updateTotal()">
+                                <span class="price-info">
+                                    <span class="purchase-price-label"></span>
+                                    <span class="selling-price-label">Giá bán:</span>
+                                    <input type="number" class="selling-price-input price-input" min="0" oninput="updateTotal()">
+                                </span>
+                                <button type="button" onclick="removeProduct(this)">Xóa</button>
+                            </div>
+                        `;
+                        togglePurposeField();
+                        searchInvoices();
+                    } else {
+                        alert(data.message);
+                    }
+                } catch (error) {
+                    console.error('Lỗi khi cập nhật hóa đơn:', error);
+                    alert('Lỗi khi cập nhật hóa đơn. Vui lòng thử lại.');
+                }
+            };
+        }
+
+        async function deleteInvoice(id) {
+            if (confirm('Bạn có chắc chắn muốn xóa hóa đơn này?')) {
+                const response = await fetch(`/api/invoices/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                alert(data.message);
+                searchInvoices();
+            }
+        }
+
+        function prevInvoicePage() {
+            if (currentInvoicePage > 1) {
+                currentInvoicePage--;
+                searchInvoices();
+            }
+        }
+
+        function nextInvoicePage() {
+            currentInvoicePage++;
+            searchInvoices();
+        }
     </script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
