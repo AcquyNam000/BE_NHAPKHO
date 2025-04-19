@@ -5,29 +5,68 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bảng điều khiển</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .dashboard-links {
+            margin: 20px 0;
+        }
+        .dashboard-links a {
+            margin-right: 10px;
+            text-decoration: none;
+            color: blue;
+        }
+        .dashboard-links a:hover {
+            text-decoration: underline;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-box {
+            border: 1px solid #ccc;
+            padding: 20px;
+            text-align: center;
+            flex: 1;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Bảng điều khiển</h1>
-        <nav>
-            <ul>
-                <li><a href="/products">Quản lý sản phẩm</a></li>
-                <li><a href="/invoices">Quản lý hóa đơn</a></li>
-                <li><a href="/inventory">Báo cáo tồn kho</a></li>
-                <li><a href="/sales/total">Báo cáo doanh thu</a></li>
-            </ul>
-        </nav>
-        <div class="dashboard-stats">
+        <div class="dashboard-links">
+            <a href="/products">Quản lý sản phẩm</a>
+            <a href="/invoices">Quản lý hóa đơn</a>
+            <a href="/inventory">Báo cáo tồn kho</a>
+            <a href="/statistics">Thống kê</a> <!-- Thay đổi từ "Báo cáo doanh thu" thành "Thống kê" -->
+        </div>
+        <div class="stats">
             <div class="stat-box">
                 <h3>Tổng sản phẩm</h3>
                 <p id="total-products">0</p>
             </div>
             <div class="stat-box">
-                <h3>Tổng doanh thu</h3>
-                <p id="total-sales">0 VNĐ</p>
+                <h3>Tổng sản phẩm tồn đọng</h3>
+                <p id="total-inventory">0</p>
             </div>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadDashboardData();
+        });
+
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/dashboard');
+                const data = await response.json();
+
+                document.getElementById('total-products').textContent = data.total_products;
+                document.getElementById('total-inventory').textContent = data.total_inventory;
+            } catch (error) {
+                console.error('Lỗi khi tải dữ liệu bảng điều khiển:', error);
+                alert('Lỗi khi tải dữ liệu bảng điều khiển. Vui lòng thử lại.');
+            }
+        }
+    </script>
 </body>
 </html>

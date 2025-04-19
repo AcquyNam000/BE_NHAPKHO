@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báo cáo doanh thu</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .search-bar {
+            margin: 20px 0;
+        }
+        .search-bar input[type="month"] {
+            margin-right: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Báo cáo doanh thu</h1>
+        <a href="/">Quay lại bảng điều khiển</a>
+        <div class="search-bar">
+            <input type="month" id="start_date">
+            <input type="month" id="end_date">
+            <button onclick="searchRevenue()">Tìm</button>
+        </div>
+        <table id="revenue-table">
+            <thead>
+                <tr>
+                    <th>Tháng</th>
+                    <th>Tổng tiền nhập</th>
+                    <th>Doanh thu</th>
+                    <th>Lợi nhuận</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const lastYear = new Date(today);
+            lastYear.setFullYear(today.getFullYear() - 1);
+
+            document.getElementById('start_date').value = lastYear.toISOString().slice(0, 7);
+            document.getElementById('end_date').value = today.toISOString().slice(0, 7);
+
+            searchRevenue();
+        });
+
+        async function searchRevenue() {
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            const response = await fetch(`/api/revenue?start_date=${startDate}-01&end_date=${endDate}-31`);
+            const data = await response.json();
+
+            const tableBody = document.querySelector('#revenue-table tbody');
+            tableBody.innerHTML = '';
+
+            data.revenue.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.month}</td>
+                    <td>${formatCurrency(item.total_import)}</td>
+                    <td>${formatCurrency(item.total_export)}</td>
+                    <td>${formatCurrency(item.profit)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function formatCurrency(number) {
+            if (typeof number !== 'number' || isNaN(number)) {
+                return '0 VNĐ';
+            }
+            return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' VNĐ';
+        }
+    </script>
+</body>
+</html>

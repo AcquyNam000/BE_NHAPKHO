@@ -3,8 +3,11 @@ from .database import init_db, get_db_connection
 from .products import products_bp
 from .invoices import invoices_bp
 from .reports import reports_bp
+from app.inventory import inventory_bp
+from app.dashboard import dashboard_bp
+# from app.statistics import statistics_bp
 import os
-
+from app.revenue import revenue_bp
 def create_app():
     app = Flask(__name__, template_folder='templates')
     app.config.from_object('config.Config')
@@ -29,7 +32,11 @@ def create_app():
     # Đăng ký các blueprint
     app.register_blueprint(products_bp)
     app.register_blueprint(invoices_bp)
-    app.register_blueprint(reports_bp)
+    # app.register_blueprint(reports_bp)
+    app.register_blueprint(inventory_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(revenue_bp)
+    # app.register_blueprint(statistics_bp)
 
     # Route cho trang chính
     @app.route('/')

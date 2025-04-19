@@ -235,6 +235,10 @@ def create_invoice():
         if not items_list:
             return jsonify({'message': 'Danh sách sản phẩm không được để trống'}), 400
 
+        # Kiểm tra tổng tiền sau giảm giá
+        if total < 0:
+            return jsonify({'message': 'Tổng tiền sau giảm giá không được nhỏ hơn 0'}), 400
+
         conn = get_db_connection()
         c = conn.cursor()
 
@@ -242,15 +246,16 @@ def create_invoice():
             for item in items_list:
                 product_id = item.get('id')
                 quantity = int(item.get('quantity', 0))
-                c.execute("SELECT quantity FROM products WHERE id = ?", (product_id,))
+                c.execute("SELECT quantity, name FROM products WHERE id = ?", (product_id,))
                 product = c.fetchone()
                 if not product:
                     conn.close()
                     return jsonify({'message': f'Sản phẩm ID {product_id} không tồn tại'}), 404
                 current_quantity = product['quantity']
+                product_name = product['name']
                 if quantity > current_quantity:
                     conn.close()
-                    return jsonify({'message': f'Số lượng xuất ({quantity}) của sản phẩm ID {product_id} vượt quá số lượng tồn kho ({current_quantity})'}), 400
+                    return jsonify({'message': f'Sản phẩm "{product_name}" (ID: {product_id}) đã hết hàng. Số lượng xuất ({quantity}) vượt quá số lượng tồn kho ({current_quantity})'}), 400
 
         c.execute('''INSERT INTO invoices (date, type, purpose, total, discount, discount_type, items, note)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -314,6 +319,11 @@ def update_invoice(id):
             conn.close()
             return jsonify({'message': 'Danh sách sản phẩm không được để trống'}), 400
 
+        # Kiểm tra tổng tiền sau giảm giá
+        if total < 0:
+            conn.close()
+            return jsonify({'message': 'Tổng tiền sau giảm giá không được nhỏ hơn 0'}), 400
+
         old_items = json.loads(invoice['items'])
         for item in old_items:
             product_id = item.get('id')
@@ -327,15 +337,16 @@ def update_invoice(id):
             for item in items_list:
                 product_id = item.get('id')
                 quantity = int(item.get('quantity', 0))
-                c.execute("SELECT quantity FROM products WHERE id = ?", (product_id,))
+                c.execute("SELECT quantity, name FROM products WHERE id = ?", (product_id,))
                 product = c.fetchone()
                 if not product:
                     conn.close()
                     return jsonify({'message': f'Sản phẩm ID {product_id} không tồn tại'}), 404
                 current_quantity = product['quantity']
+                product_name = product['name']
                 if quantity > current_quantity:
                     conn.close()
-                    return jsonify({'message': f'Số lượng xuất ({quantity}) của sản phẩm ID {product_id} vượt quá số lượng tồn kho ({current_quantity})'}), 400
+                    return jsonify({'message': f'Sản phẩm "{product_name}" (ID: {product_id}) đã hết hàng. Số lượng xuất ({quantity}) vượt quá số lượng tồn kho ({current_quantity})'}), 400
 
         c.execute('''UPDATE invoices SET date = ?, type = ?, purpose = ?, total = ?, discount = ?, discount_type = ?, items = ?, note = ?
                      WHERE id = ?''',

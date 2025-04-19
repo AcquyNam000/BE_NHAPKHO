@@ -37,7 +37,7 @@
             gap: 5px;
         }
         .price-input {
-            width: 100px;
+            width: 150px; /* Tăng kích thước ô giá bán */
             padding: 2px;
         }
         .discount-group {
@@ -261,8 +261,18 @@
                 let finalDiscount = 0;
                 if (discountType === 'percentage') {
                     finalDiscount = (total * discount) / 100;
+                    // Giới hạn giảm giá để tổng tiền không nhỏ hơn 0
+                    if (finalDiscount > total) {
+                        finalDiscount = total;
+                        document.getElementById('discount').value = 100; // Cập nhật giá trị giảm giá tối đa
+                    }
                 } else {
                     finalDiscount = discount;
+                    // Giới hạn giảm giá cố định để tổng tiền không nhỏ hơn 0
+                    if (finalDiscount > total) {
+                        finalDiscount = total;
+                        document.getElementById('discount').value = total;
+                    }
                 }
                 total -= finalDiscount;
             }

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thống kê</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .search-bar {
+            margin: 20px 0;
+        }
+        .search-bar input[type="date"] {
+            margin-right: 10px;
+        }
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .stat-box {
+            border: 1px solid #ccc;
+            padding: 20px;
+            text-align: center;
+            flex: 1;
+            min-width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Thống kê</h1>
+        <a href="/">Quay lại bảng điều khiển</a>
+        <div class="search-bar">
+            <input type="date" id="start_date">
+            <input type="date" id="end_date">
+            <button onclick="loadStatistics()">Tìm</button>
+        </div>
+        <div class="stats">
+            <div class="stat-box">
+                <h3>Tổng sản phẩm</h3>
+                <p id="total-products">0</p>
+            </div>
+            <div class="stat-box">
+                <h3>Tổng sản phẩm tồn đọng</h3>
+                <p id="total-inventory">0</p>
+            </div>
+            <div class="stat-box">
+                <h3>Tổng tiền nhập</h3>
+                <p id="total-import">0 VNĐ</p>
+            </div>
+            <div class="stat-box">
+                <h3>Tổng tiền xuất</h3>
+                <p id="total-export">0 VNĐ</p>
+            </div>
+            <div class="stat-box">
+                <h3>Lợi nhuận</h3>
+                <p id="profit">0 VNĐ</p>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const lastMonth = new Date(today);
+            lastMonth.setMonth(today.getMonth() - 1);
+
+            document.getElementById('start_date').value = lastMonth.toISOString().slice(0, 10);
+            document.getElementById('end_date').value = today.toISOString().slice(0, 10);
+
+            loadStatistics();
+        });
+
+        async function loadStatistics() {
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+            const response = await fetch(`/api/statistics?start_date=${startDate}&end_date=${endDate}`);
+            const data = await response.json();
+
+            document.getElementById('total-products').textContent = data.total_products;
+            document.getElementById('total-inventory').textContent = data.total_inventory;
+            document.getElementById('total-import').textContent = formatCurrency(data.total_import);
+            document.getElementById('total-export').textContent = formatCurrency(data.total_export);
+            document.getElementById('profit').textContent = formatCurrency(data.profit);
+        }
+
+        function formatCurrency(number) {
+            if (typeof number !== 'number' || isNaN(number)) {
+                return '0 VNĐ';
+            }
+            return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' VNĐ';
+        }
+    </script>
+</body>
+</html>

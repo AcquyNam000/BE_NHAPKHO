@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Báo cáo tồn kho</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .totals {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -13,6 +19,10 @@
         <div class="search-bar">
             <input type="text" id="search" placeholder="Tìm kiếm mã hoặc tên sản phẩm">
             <button onclick="searchInventory()">Tìm</button>
+        </div>
+        <div class="totals">
+            <span id="total-products">Tổng số sản phẩm: 0</span> | 
+            <span id="total-value">Tổng giá trị: 0 VNĐ</span>
         </div>
         <table id="inventory-table">
             <thead>
@@ -30,17 +40,46 @@
             </thead>
             <tbody></tbody>
         </table>
-        <div class="pagination">
-            <button onclick="prevInventoryPage()">Trước</button>
-            <span id="inventory-page-info"></span>
-            <button onclick="nextInventoryPage()">Sau</button>
-        </div>
-        <div class="summary">
-            <p>Tổng số sản phẩm: <span id="total-items">0</span></p>
-            <p>Tổng giá trị: <span id="total-value">0 VNĐ</span></p>
-        </div>
     </div>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9329f5808be4bcfe',t:'MTc0NTA0MDA5Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            searchInventory();
+        });
+
+        async function searchInventory() {
+            const search = document.getElementById('search').value;
+            const response = await fetch(`/api/inventory?search=${encodeURIComponent(search)}`);
+            const data = await response.json();
+
+            const tableBody = document.querySelector('#inventory-table tbody');
+            tableBody.innerHTML = '';
+
+            data.inventory.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.id}</td>
+                    <td>${item.name}</td>
+                    <td>${item.unit || ''}</td>
+                    <td>${formatCurrency(item.purchase_price)}</td>
+                    <td>${formatCurrency(item.selling_price)}</td>
+                    <td>${item.quantity}</td>
+                    <td>${formatCurrency(item.total_value)}</td>
+                    <td>${item.status}</td>
+                    <td>${item.note}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            document.getElementById('total-products').textContent = `Tổng số sản phẩm: ${data.total_products}`;
+            document.getElementById('total-value').textContent = `Tổng giá trị: ${formatCurrency(data.total_value)}`;
+        }
+
+        function formatCurrency(number) {
+            if (typeof number !== 'number' || isNaN(number)) {
+                return '0 VNĐ';
+            }
+            return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' VNĐ';
+        }
+    </script>
 </body>
 </html>
