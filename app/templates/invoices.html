@@ -37,7 +37,11 @@
             gap: 5px;
         }
         .price-input {
-            width: 150px; /* Tăng kích thước ô giá bán */
+            width: 150px;
+            padding: 2px;
+        }
+        .quantity-input {
+            width: 150px; /* Đặt cùng kích thước với ô giá bán */
             padding: 2px;
         }
         .discount-group {
@@ -116,6 +120,7 @@
             <input type="date" id="start_date">
             <input type="date" id="end_date">
             <button onclick="searchInvoices()">Tìm</button>
+            <button onclick="exportExcel()">Xuất Excel</button>
         </div>
         <div class="totals">
             <span id="total-import">Tổng tiền nhập: 0 VNĐ</span> | 
@@ -261,14 +266,12 @@
                 let finalDiscount = 0;
                 if (discountType === 'percentage') {
                     finalDiscount = (total * discount) / 100;
-                    // Giới hạn giảm giá để tổng tiền không nhỏ hơn 0
                     if (finalDiscount > total) {
                         finalDiscount = total;
-                        document.getElementById('discount').value = 100; // Cập nhật giá trị giảm giá tối đa
+                        document.getElementById('discount').value = 100;
                     }
                 } else {
                     finalDiscount = discount;
-                    // Giới hạn giảm giá cố định để tổng tiền không nhỏ hơn 0
                     if (finalDiscount > total) {
                         finalDiscount = total;
                         document.getElementById('discount').value = total;
@@ -404,6 +407,18 @@
             window.location.href = `/api/invoices/${id}/export/pdf`;
         }
 
+        async function exportExcel() {
+            const startDate = document.getElementById('start_date').value;
+            const endDate = document.getElementById('end_date').value;
+
+            if (!startDate || !endDate) {
+                alert('Vui lòng chọn khoảng thời gian để xuất dữ liệu');
+                return;
+            }
+
+            window.location.href = `/api/invoices/export/excel?start_date=${startDate}&end_date=${endDate}`;
+        }
+
         async function editInvoice(id) {
             const response = await fetch(`/api/invoices?page=1&per_page=1&search=&start_date=&end_date=`);
             const data = await response.json();
@@ -512,5 +527,5 @@
             searchInvoices();
         }
     </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'933182cfbdf2b06f',t:'MTc0NTExOTI4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

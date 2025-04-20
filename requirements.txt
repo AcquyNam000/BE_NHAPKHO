@@ -8,3 +8,4 @@ bcrypt
 Jinja2
 openpyxl
 reportlab
+xlsxwriter

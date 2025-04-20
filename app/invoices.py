@@ -6,9 +6,15 @@ from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
+import pandas as pd
 
 invoices_bp = Blueprint('invoices', __name__)
+
+# Đăng ký phông chữ Times New Roman hỗ trợ tiếng Việt
+pdfmetrics.registerFont(TTFont('TimesNewRoman', 'C:/Windows/Fonts/times.ttf'))  # Đường dẫn đến phông chữ Times New Roman
 
 def ensure_invoices_table():
     conn = get_db_connection()
@@ -90,6 +96,9 @@ def get_invoices():
             query += " AND date <= ?"
             params.append(end_date)
 
+        # Sắp xếp theo ID giảm dần (mới nhất ở trên cùng)
+        query += " ORDER BY id DESC"
+
         c.execute(query, params)
         invoices = c.fetchall()
 
@@ -165,11 +174,11 @@ def export_invoice_pdf(id):
     width, height = A4
 
     # Tiêu đề hóa đơn
-    p.setFont("Helvetica-Bold", 16)
+    p.setFont("TimesNewRoman", 16)
     p.drawString(30 * mm, height - 30 * mm, f"HÓA ĐƠN {'NHẬP' if invoice['type'] == 'Nhập' else 'XUẤT'}")
     
     # Thông tin hóa đơn
-    p.setFont("Helvetica", 12)
+    p.setFont("TimesNewRoman", 12)
     y = height - 50 * mm
     p.drawString(30 * mm, y, f"ID: {invoice['id']}")
     p.drawString(30 * mm, y - 10 * mm, f"Ngày: {invoice['date']}")
@@ -180,7 +189,7 @@ def export_invoice_pdf(id):
 
     # Tiêu đề bảng sản phẩm
     y -= 60 * mm
-    p.setFont("Helvetica-Bold", 12)
+    p.setFont("TimesNewRoman", 12)
     p.drawString(30 * mm, y, "Sản phẩm")
     p.drawString(80 * mm, y, "Số lượng")
     p.drawString(110 * mm, y, "Giá bán")
@@ -188,7 +197,7 @@ def export_invoice_pdf(id):
     p.line(30 * mm, y - 2 * mm, 180 * mm, y - 2 * mm)
 
     # Danh sách sản phẩm
-    p.setFont("Helvetica", 12)
+    p.setFont("TimesNewRoman", 12)
     y -= 10 * mm
     for item in items:
         custom_price = item.get('custom_selling_price', item.get('selling_price', 0))
@@ -210,6 +219,67 @@ def export_invoice_pdf(id):
 
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f"hoa_don_{id}.pdf", mimetype='application/pdf')
+
+@invoices_bp.route('/api/invoices/export/excel', methods=['GET'])
+def export_excel():
+    try:
+        ensure_invoices_table()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+
+        if not start_date or not end_date:
+            return jsonify({'message': 'Vui lòng chọn khoảng thời gian để xuất dữ liệu'}), 400
+
+        conn = get_db_connection()
+        c = conn.cursor()
+
+        try:
+            query = "SELECT id, date, type, purpose, total, discount, discount_type, items, note FROM invoices WHERE date >= ? AND date <= ?"
+            params = [start_date, end_date]
+
+            c.execute(query, params)
+            invoices = c.fetchall()
+
+            if not invoices:
+                return jsonify({'message': 'Không có hóa đơn nào trong khoảng thời gian đã chọn'}), 404
+
+            data = []
+            for invoice in invoices:
+                items = json.loads(invoice['items'] or '[]')
+                item_names = ", ".join([f"{item['name']} (x{item['quantity']})" for item in items])
+                data.append({
+                    'ID': invoice['id'],
+                    'Ngày': invoice['date'],
+                    'Loại': invoice['type'],
+                    'Mục đích': invoice['purpose'] if invoice['purpose'] else '',
+                    'Tổng tiền': float(invoice['total']),
+                    'Giảm giá': f"{invoice['discount']} {'%' if invoice['discount_type'] == 'percentage' else 'VNĐ'}",
+                    'Sản phẩm': item_names,
+                    'Ghi chú': invoice['note'] if invoice['note'] else ''
+                })
+
+            df = pd.DataFrame(data)
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Invoices')
+                workbook = writer.book
+                worksheet = writer.sheets['Invoices']
+                number_format = workbook.add_format({'num_format': '#,##0'})
+                worksheet.set_column('E:E', None, number_format)  # Cột Tổng tiền
+            output.seek(0)
+
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=f'invoices_{start_date}_to_{end_date}.xlsx',
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+        finally:
+            conn.close()
+    except ImportError as e:
+        return jsonify({'message': f'Lỗi khi xuất Excel: Vui lòng cài đặt thư viện xlsxwriter: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'message': f'Lỗi khi xuất Excel: {str(e)}'}), 500
 
 @invoices_bp.route('/api/invoices', methods=['POST'])
 def create_invoice():

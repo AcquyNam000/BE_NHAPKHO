@@ -5,15 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quản lý sản phẩm</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .image-preview {
+            max-width: 100px;
+            max-height: 100px;
+            object-fit: cover;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Quản lý sản phẩm</h1>
         <a href="/">Quay lại bảng điều khiển</a>
-        <form id="product-form" method="POST" action="/api/products" enctype="multipart/form-data">
+        <form id="product-form" method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="code">Mã sản phẩm:</label>
-                <input type="text" id="code" name="code" required>
+                <input type="text" id="code" name="code">
             </div>
             <div class="form-group">
                 <label for="name">Tên sản phẩm:</label>
@@ -21,33 +28,33 @@
             </div>
             <div class="form-group">
                 <label for="unit">Đơn vị:</label>
-                <input type="text" id="unit" name="unit" required>
+                <input type="text" id="unit" name="unit">
             </div>
             <div class="form-group">
                 <label for="purchase_price">Giá nhập:</label>
-                <input type="text" id="purchase_price_display" oninput="formatPrice(this, 'purchase_price')" placeholder="Nhập giá nhập">
-                <input type="hidden" id="purchase_price" name="purchase_price">
+                <input type="text" id="purchase_price" name="purchase_price" min="0" required>
             </div>
             <div class="form-group">
                 <label for="selling_price">Giá bán:</label>
-                <input type="text" id="selling_price_display" oninput="formatPrice(this, 'selling_price')" placeholder="Nhập giá bán">
-                <input type="hidden" id="selling_price" name="selling_price">
+                <input type="text" id="selling_price" name="selling_price" min="0" required>
             </div>
             <div class="form-group">
                 <label for="image">Hình ảnh:</label>
                 <input type="file" id="image" name="image" accept="image/*">
+                <img id="image-preview" class="image-preview" style="display: none;">
             </div>
             <div class="form-group">
                 <label for="note">Ghi chú:</label>
                 <textarea id="note" name="note"></textarea>
             </div>
-            <input type="hidden" id="product-id" name="product_id">
             <button type="submit">Lưu</button>
         </form>
         <div class="search-bar">
             <input type="text" id="search" placeholder="Tìm kiếm mã hoặc tên sản phẩm">
             <button onclick="searchProducts()">Tìm</button>
             <button onclick="exportExcel()">Xuất Excel</button>
+            <input type="file" id="import-excel" accept=".xlsx">
+            <button onclick="importExcel()">Nhập Excel</button>
         </div>
         <table id="product-table">
             <thead>
@@ -71,52 +78,276 @@
         </div>
     </div>
     <script>
-        function formatPrice(input, hiddenFieldId) {
-            let value = input.value.replace(/\D/g, '');
-            if (!value) {
-                input.value = '';
-                document.getElementById(hiddenFieldId).value = '';
-                return;
-            }
+        let currentPage = 1;
+        const perPage = 10;
 
-            let number = parseInt(value);
-            let formatted = number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-            input.value = formatted;
-            document.getElementById(hiddenFieldId).value = number;
+        // Hàm định dạng số với dấu chấm phân cách hàng nghìn
+        function formatNumber(number) {
+            if (typeof number !== 'number' || isNaN(number) || number === null) {
+                return '0';
+            }
+            return Math.floor(number).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         }
 
-        async function exportExcel() {
+        // Hàm định dạng giá trị tiền tệ với VNĐ (dùng cho bảng)
+        function formatCurrency(number) {
+            return formatNumber(number) + ' VNĐ';
+        }
+
+        // Hàm xóa định dạng để lấy giá trị số gốc
+        function parseNumber(formattedNumber) {
+            if (!formattedNumber) return 0;
+            return parseFloat(formattedNumber.replace(/\./g, '')) || 0;
+        }
+
+        // Lấy các ô nhập liệu giá nhập và giá bán
+        const purchasePriceInput = document.getElementById('purchase_price');
+        const sellingPriceInput = document.getElementById('selling_price');
+
+        // Thêm sự kiện input và blur để định dạng giá trị hiển thị
+        [purchasePriceInput, sellingPriceInput].forEach(input => {
+            input.addEventListener('input', (e) => {
+                let value = parseNumber(e.target.value);
+                if (isNaN(value)) value = 0;
+                e.target.value = formatNumber(value);
+            });
+
+            input.addEventListener('blur', (e) => {
+                let value = parseNumber(e.target.value);
+                if (isNaN(value)) value = 0;
+                e.target.value = formatNumber(value);
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            searchProducts();
+        });
+
+        document.getElementById('image').addEventListener('change', function (e) {
+            const preview = document.getElementById('image-preview');
+            if (e.target.files && e.target.files[0]) {
+                preview.src = URL.createObjectURL(e.target.files[0]);
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        });
+
+        document.getElementById('product-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(document.getElementById('product-form'));
+            
+            // Chuyển đổi giá trị định dạng về số gốc trước khi gửi
+            const purchasePrice = parseNumber(purchasePriceInput.value);
+            const sellingPrice = parseNumber(sellingPriceInput.value);
+            
+            formData.set('purchase_price', purchasePrice);
+            formData.set('selling_price', sellingPrice);
+
             try {
-                const response = await fetch('/api/products/export/excel');
+                const response = await fetch('/api/products', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const data = await response.json();
                 if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'san_pham.xlsx';
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
+                    alert(data.message);
+                    document.getElementById('product-form').reset();
+                    document.getElementById('image-preview').style.display = 'none';
+                    searchProducts();
                 } else {
-                    const data = await response.json();
                     alert(data.message);
                 }
             } catch (error) {
-                alert('Lỗi khi xuất Excel: ' + error);
+                console.error('Lỗi khi thêm sản phẩm:', error);
+                alert('Lỗi khi thêm sản phẩm. Vui lòng thử lại.');
+            }
+        });
+
+        async function searchProducts() {
+            const search = document.getElementById('search').value;
+            const response = await fetch(`/api/products?page=${currentPage}&per_page=${perPage}&search=${encodeURIComponent(search)}`);
+            const data = await response.json();
+
+            const tableBody = document.querySelector('#product-table tbody');
+            tableBody.innerHTML = '';
+
+            data.products.forEach(product => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${product.code || ''}</td>
+                    <td>${product.name}</td>
+                    <td>${product.unit || ''}</td>
+                    <td>${formatCurrency(product.purchase_price)}</td>
+                    <td>${formatCurrency(product.selling_price)}</td>
+                    <td>${product.image ? `<img src="${product.image}" class="image-preview" alt="Hình ảnh sản phẩm">` : 'Không có hình ảnh'}</td>
+                    <td>${product.note || ''}</td>
+                    <td>
+                        <button onclick="editProduct(${product.id})">Sửa</button>
+                        <button onclick="deleteProduct(${product.id})">Xóa</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            document.getElementById('page-info').textContent = `Trang ${data.page}/${Math.ceil(data.total / data.per_page)}`;
+        }
+
+        async function editProduct(id) {
+            const response = await fetch(`/api/products?page=1&per_page=${perPage}&search=&id=${id}`);
+            const data = await response.json();
+            const product = data.products.find(p => p.id === id);
+            if (!product) {
+                alert('Sản phẩm không tồn tại');
+                return;
+            }
+
+            document.getElementById('code').value = product.code || '';
+            document.getElementById('name').value = product.name;
+            document.getElementById('unit').value = product.unit || '';
+            document.getElementById('purchase_price').value = formatNumber(product.purchase_price);
+            document.getElementById('selling_price').value = formatNumber(product.selling_price);
+            document.getElementById('note').value = product.note || '';
+            const preview = document.getElementById('image-preview');
+            if (product.image) {
+                preview.src = product.image;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+
+            document.getElementById('product-form').onsubmit = async (event) => {
+                event.preventDefault();
+                const formData = new FormData(document.getElementById('product-form'));
+                
+                // Chuyển đổi giá trị định dạng về số gốc trước khi gửi
+                const purchasePrice = parseNumber(purchasePriceInput.value);
+                const sellingPrice = parseNumber(sellingPriceInput.value);
+                
+                formData.set('purchase_price', purchasePrice);
+                formData.set('selling_price', sellingPrice);
+
+                try {
+                    const response = await fetch(`/api/products/${id}`, {
+                        method: 'PUT',
+                        body: formData,
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert(data.message);
+                        document.getElementById('product-form').reset();
+                        document.getElementById('image-preview').style.display = 'none';
+                        document.getElementById('product-form').onsubmit = null;
+                        document.getElementById('product-form').addEventListener('submit', async (event) => {
+                            event.preventDefault();
+                            const formData = new FormData(document.getElementById('product-form'));
+                            
+                            // Chuyển đổi giá trị định dạng về số gốc trước khi gửi
+                            const purchasePrice = parseNumber(purchasePriceInput.value);
+                            const sellingPrice = parseNumber(sellingPriceInput.value);
+                            
+                            formData.set('purchase_price', purchasePrice);
+                            formData.set('selling_price', sellingPrice);
+
+                            try {
+                                const response = await fetch('/api/products', {
+                                    method: 'POST',
+                                    body: formData,
+                                    headers: {
+                                        'Accept': 'application/json'
+                                    }
+                                });
+                                const data = await response.json();
+                                if (response.ok) {
+                                    alert(data.message);
+                                    document.getElementById('product-form').reset();
+                                    searchProducts();
+                                } else {
+                                    alert(data.message);
+                                }
+                            } catch (error) {
+                                console.error('Lỗi khi thêm sản phẩm:', error);
+                                alert('Lỗi khi thêm sản phẩm. Vui lòng thử lại.');
+                            }
+                        });
+                        searchProducts();
+                    } else {
+                        alert(data.message);
+                    }
+                } catch (error) {
+                    console.error('Lỗi khi cập nhật sản phẩm:', error);
+                    alert('Lỗi khi cập nhật sản phẩm. Vui lòng thử lại.');
+                }
+            };
+        }
+
+        async function deleteProduct(id) {
+            if (confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) {
+                const response = await fetch(`/api/products/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                alert(data.message);
+                searchProducts();
             }
         }
 
-        document.getElementById('product-form').addEventListener('submit', (event) => {
-            const purchasePrice = document.getElementById('purchase_price').value;
-            const selling_price = document.getElementById('selling_price').value;
-
-            if (!purchasePrice || !selling_price) {
-                event.preventDefault();
-                alert('Vui lòng nhập đầy đủ Giá nhập và Giá bán.');
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                searchProducts();
             }
-        });
+        }
+
+        function nextPage() {
+            currentPage++;
+            searchProducts();
+        }
+
+        async function exportExcel() {
+            window.location.href = '/api/products/export/excel';
+        }
+
+        async function importExcel() {
+            const fileInput = document.getElementById('import-excel');
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert('Vui lòng chọn một file Excel để nhập.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/api/products/import/excel', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert(data.message);
+                    fileInput.value = ''; // Reset input file
+                    searchProducts(); // Làm mới bảng
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                console.error('Lỗi khi nhập Excel:', error);
+                alert('Lỗi khi nhập Excel. Vui lòng thử lại.');
+            }
+        }
     </script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'932ca4c3ec208bbc',t:'MTc0NTA2ODI0Mi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>

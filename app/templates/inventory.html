@@ -10,6 +10,22 @@
             margin: 10px 0;
             font-weight: bold;
         }
+        .product-image {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+        }
+        .no-image {
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f0f0;
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -19,6 +35,7 @@
         <div class="search-bar">
             <input type="text" id="search" placeholder="Tìm kiếm mã hoặc tên sản phẩm">
             <button onclick="searchInventory()">Tìm</button>
+            <button onclick="exportExcel()">Xuất Excel</button>
         </div>
         <div class="totals">
             <span id="total-products">Tổng số sản phẩm: 0</span> | 
@@ -28,6 +45,7 @@
             <thead>
                 <tr>
                     <th>Mã</th>
+                    <th>Ảnh</th>
                     <th>Tên</th>
                     <th>Đơn vị</th>
                     <th>Giá nhập</th>
@@ -56,8 +74,14 @@
 
             data.inventory.forEach(item => {
                 const row = document.createElement('tr');
+                // Kiểm tra nếu có ảnh thì hiển thị thẻ <img>, nếu không thì hiển thị placeholder
+                const imageCell = item.image && typeof item.image === 'string' && item.image.trim() !== ''
+                    ? `<img src="${item.image}" alt="${item.name}" class="product-image">`
+                    : `<div class="no-image">No Image</div>`;
+                
                 row.innerHTML = `
                     <td>${item.id}</td>
+                    <td>${imageCell}</td>
                     <td>${item.name}</td>
                     <td>${item.unit || ''}</td>
                     <td>${formatCurrency(item.purchase_price)}</td>
@@ -79,6 +103,11 @@
                 return '0 VNĐ';
             }
             return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' VNĐ';
+        }
+
+        async function exportExcel() {
+            const search = document.getElementById('search').value;
+            window.location.href = `/api/inventory/export/excel?search=${encodeURIComponent(search)}`;
         }
     </script>
 </body>

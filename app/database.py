@@ -4,7 +4,7 @@ import os
 DATABASE = 'inventory.db'
 
 def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
+    conn = sqlite3.connect('database.db', timeout=30)  # Thêm timeout=10 giây
     conn.row_factory = sqlite3.Row
     return conn
 

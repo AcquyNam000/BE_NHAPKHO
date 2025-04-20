@@ -5,7 +5,7 @@ from .invoices import invoices_bp
 from .reports import reports_bp
 from app.inventory import inventory_bp
 from app.dashboard import dashboard_bp
-# from app.statistics import statistics_bp
+from .statistics import statistics_bp
 import os
 from app.revenue import revenue_bp
 def create_app():
@@ -36,7 +36,7 @@ def create_app():
     app.register_blueprint(inventory_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(revenue_bp)
-    # app.register_blueprint(statistics_bp)
+    app.register_blueprint(statistics_bp)
 
     # Route cho trang chính
     @app.route('/')
